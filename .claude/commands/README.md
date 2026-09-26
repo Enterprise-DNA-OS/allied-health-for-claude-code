@@ -1,5 +1,5 @@
 # Slash commands
 
-One file per recurring job. Each command tells Claude Code exactly which CLI command to run and how to present the result, so the operator never re-explains the job.
+One file per recurring job. Each is a short recipe: which CLI commands to run, how to present the answer, and where the line is (drafts, never sends; refusals carry the fix).
 
-Add a command every time the same ask comes twice. Frontmatter needs a `description:` line. The body is the brief.
+The daily doors: `/attention` first thing, `/day` for the desk, `/weekly-review` on Mondays. Everything else is a job with a name.

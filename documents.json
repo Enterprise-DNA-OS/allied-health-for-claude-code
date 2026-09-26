@@ -1,11 +1,58 @@
 [
   {
-    "name": "example",
-    "title": "TODO(author): the first document this industry must produce",
-    "for_each": "select gen_random_uuid() as id, 'Example' as name",
+    "name": "invoice",
+    "title": "Tax invoice",
+    "for_each": "select id, ref || ' ' || patient as name, ref from v_invoices where status in ('sent', 'paid')",
     "file": "name",
     "sections": [
-      { "title": "Details", "sql": "select 'replace me' as item, $1::text as record_id" }
+      {
+        "title": "Invoice",
+        "sql": "select i.ref as invoice, p.name as billed_to, i.payer, to_char(i.issued_on, 'DD Mon YYYY') as issued, to_char(i.due_on, 'DD Mon YYYY') as due, coalesce(c.ref || ': ' || c.title, '') as case, coalesce(c.claim_number, '') as claim from invoices i join patients p on p.id = i.patient_id left join cases c on c.id = i.case_id where i.id = $1"
+      },
+      {
+        "title": "Items",
+        "sql": "select description, qty, round(unit_cents / 100.0, 2) as unit, round(qty * unit_cents / 100.0, 2) as amount from invoice_items where invoice_id = $1"
+      },
+      {
+        "title": "Payments and balance",
+        "sql": "select round(total_cents / 100.0, 2) as total, round(paid_cents / 100.0, 2) as paid, round(balance_cents / 100.0, 2) as balance, initcap(status) as status from v_invoices where id = $1"
+      }
+    ]
+  },
+  {
+    "name": "patient-statement",
+    "title": "Statement",
+    "for_each": "select p.id, p.name from patients p where exists (select 1 from v_invoices i where i.patient_id = p.id and i.balance_cents > 0 and i.status = 'sent')",
+    "file": "name",
+    "sections": [
+      {
+        "title": "Open invoices",
+        "sql": "select ref as invoice, to_char(issued_on, 'DD Mon YYYY') as issued, to_char(due_on, 'DD Mon YYYY') as due, payer, round(total_cents / 100.0, 2) as total, round(balance_cents / 100.0, 2) as owing from v_invoices where patient_id = $1 and balance_cents > 0 and status = 'sent' order by issued_on"
+      },
+      {
+        "title": "Total owing",
+        "sql": "select round(sum(balance_cents) / 100.0, 2) as amount_due from v_invoices where patient_id = $1 and balance_cents > 0 and status = 'sent'"
+      }
+    ]
+  },
+  {
+    "name": "case-summary",
+    "title": "Episode of care summary",
+    "for_each": "select id, ref || ' ' || patient as name from v_cases where status = 'open'",
+    "file": "name",
+    "sections": [
+      {
+        "title": "The case",
+        "sql": "select c.ref, p.name as patient, c.title as condition, c.funding || coalesce(' ' || c.claim_number, '') as funding, to_char(c.opened_on, 'DD Mon YYYY') as opened, coalesce(r.name, '') as referrer, case when c.approved_sessions is null then null else c.approved_sessions end as approved_sessions from cases c join patients p on p.id = c.patient_id left join referrers r on r.id = c.referrer_id where c.id = $1"
+      },
+      {
+        "title": "Visits",
+        "sql": "select to_char(a.on_date, 'DD Mon YYYY') as date, s.name as service, pr.name as practitioner, a.status, coalesce(tn.status, '') as note from appointments a join services s on s.id = a.service_id join practitioners pr on pr.id = a.practitioner_id left join treatment_notes tn on tn.appointment_id = a.id where a.case_id = $1 order by a.on_date"
+      },
+      {
+        "title": "Latest finalised note",
+        "sql": "select to_char(on_date, 'DD Mon YYYY') as date, subjective, objective, assessment, plan from treatment_notes where case_id = $1 and status = 'final' order by on_date desc limit 1"
+      }
     ]
   }
 ]

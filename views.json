@@ -1,13 +1,67 @@
 [
   {
     "name": "week",
-    "title": "This week",
-    "subtitle": "Allied Health for Claude Code: what needs attention, rendered by npm run view",
+    "title": "The week",
+    "subtitle": "Allied Health for Claude Code: the diary and what wants a decision, rendered by npm run view",
     "sections": [
       {
-        "title": "Needs attention",
-        "note": "TODO(author): point this at the industry's attention view (overdue, stuck, quiet).",
-        "sql": "select 'replace me' as item, 'TODO(author)' as why"
+        "title": "Booked, next 7 days",
+        "note": "Every visit on the diary. UNCONFIRMED rows are tomorrow's DNAs unless someone calls.",
+        "sql": "select to_char(on_date, 'Dy DD Mon') as day, substr(starts_at::text, 1, 5) as at, practitioner, patient, service, coalesce(case_ref, '') as case, case when status = 'booked' then 'UNCONFIRMED' else status end as state from v_appointments where on_date between current_date and current_date + 7 and status in ('booked', 'confirmed') order by on_date, starts_at"
+      },
+      {
+        "title": "Clinical records not finalised",
+        "note": "A completed visit without a finalised note. Worst first.",
+        "sql": "select to_char(on_date, 'DD Mon') as visit, days_since || ' days ago' as age, patient, practitioner, service, note_state, ref from v_notes_due order by on_date"
+      },
+      {
+        "title": "Funded cases running down",
+        "note": "ACC claims and care plans with two or fewer sessions in hand. Start the next approval before the last session, not after.",
+        "sql": "select ref, patient, title, funding, sessions_used || ' + ' || sessions_booked || ' of ' || approved_sessions as committed, sessions_remaining as remaining from v_cases where status = 'open' and approved_sessions is not null and sessions_remaining <= 2 order by sessions_remaining"
+      },
+      {
+        "title": "Recalls due inside 7 days",
+        "sql": "select to_char(due_on, 'DD Mon') as due, patient, phone, reason from v_recalls where due_on <= current_date + 7 order by due_on"
+      }
+    ]
+  },
+  {
+    "name": "clinical",
+    "title": "The clinical record",
+    "subtitle": "Notes, consent and funded care, straight off the tables",
+    "sections": [
+      {
+        "title": "Open cases",
+        "sql": "select ref, patient, title, funding || coalesce(' ' || claim_number, '') as funding, case when approved_sessions is null then sessions_used::text else sessions_used || ' of ' || approved_sessions end as sessions, case when consent_recorded_on is null then 'NOT RECORDED' else to_char(consent_recorded_on, 'DD Mon YYYY') end as consent from v_cases where status = 'open' order by opened_on desc"
+      },
+      {
+        "title": "Consent missing on treated cases",
+        "note": "Right 7, Code of Health and Disability Services Consumers' Rights 1996. Nothing completes on these until consent is recorded.",
+        "sql": "select ref, patient, title, sessions_used as visits from v_cases where status = 'open' and consent_recorded_on is null and sessions_used > 0"
+      },
+      {
+        "title": "DNAs, last 180 days",
+        "sql": "select to_char(on_date, 'DD Mon') as date, patient, practitioner, service, dnas_180 || ' in 180d' as habit from v_dnas order by on_date desc"
+      }
+    ]
+  },
+  {
+    "name": "money",
+    "title": "The money",
+    "subtitle": "Who owes what, patients and funders separately",
+    "sections": [
+      {
+        "title": "Patients owing",
+        "sql": "select ref, patient, to_char(due_on, 'DD Mon') as due, round(balance_cents / 100.0, 2) as owing, case when days_overdue > 0 then days_overdue || ' days overdue' else 'not yet due' end as state from v_invoices where payer = 'patient' and status = 'sent' and balance_cents > 0 order by days_overdue desc"
+      },
+      {
+        "title": "Funders owing (ACC, insurers)",
+        "note": "The lines everyone forgets to chase. A funder invoice past 30 days is a query, not a wait.",
+        "sql": "select ref, payer, patient, coalesce(case_ref, '') as case, round(balance_cents / 100.0, 2) as owing, days_overdue || ' days overdue' as state from v_invoices where payer in ('acc', 'insurer') and status = 'sent' and balance_cents > 0 order by days_overdue desc"
+      },
+      {
+        "title": "Takings by practitioner, last 14 days",
+        "sql": "select practitioner, sum(visits) as visits, round(sum(takings_cents) / 100.0, 2) as takings from v_takings where on_date > current_date - 14 and on_date <= current_date group by practitioner order by takings desc"
       }
     ]
   }
